@@ -4,10 +4,12 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.content.ContentUris;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
@@ -23,9 +25,17 @@ import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.Toast;
 
 import com.example.raymond.myandroidproject.R;
+import com.example.raymond.myandroidproject.base.MyApplication;
+import com.example.raymond.myandroidproject.base.Session;
+import com.example.raymond.myandroidproject.db.SQLiteDBHelper;
+import com.example.raymond.myandroidproject.db.SharePrefenceHelper;
+import com.example.raymond.myandroidproject.util.StringUtils;
+import com.example.raymond.myandroidproject.util.ToastUtils;
+import com.example.raymond.myandroidproject.util.ValidatorUtils;
 import com.example.raymond.myandroidproject.widget.PhotoDialog;
 import com.liji.circleimageview.CircleImageView;
 
@@ -35,23 +45,39 @@ import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
+/**
+ * 参考博客：http://blog.csdn.net/fuhao476200/article/details/71487432
+ * 郭霖：第二行代码 第二版
+ */
 public class MainActivity extends AppCompatActivity {
     private Context mContext;
     private PhotoDialog dialog;
     private Uri imageUri;
+
+    private SQLiteDBHelper dbHelper;
+    private Session session;
+
     public static final int TAKE_PHOTO = 1;
     public static final int CHOOSE_PHOTO = 2;
     public static final int CROP_PHOTO = 3;
+
     private CircleImageView circleImageView;
+    private EditText edt_account;
+    private EditText edt_password;
+    private EditText edt_confirmPassword;
+    private Button button;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         mContext = this;
+        initView();
 
-        Button button = findViewById(R.id.hello);
-        button.setOnClickListener(new View.OnClickListener() {
+
+        circleImageView = findViewById(R.id.iv_headIcon);
+        circleImageView.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 dialog = new PhotoDialog(mContext, R.style.PhotoDialog);
@@ -100,7 +126,62 @@ public class MainActivity extends AppCompatActivity {
                 });
             }
         });
+        commitUserInfo();
+    }
 
+    /**
+     * 校验用户信息,并将用户信息入库
+     */
+    private void commitUserInfo() {
+        String account = edt_account.getText().toString();
+        String password = edt_password.getText().toString();
+        String confrimpassword = edt_confirmPassword.getText().toString();
+
+        //            创建数据库
+        dbHelper = new SQLiteDBHelper(this, "MyDB.db", null, 1);
+
+
+        if (!StringUtils.isEmpty(account)) {
+            if (ValidatorUtils.isEmail(account) || ValidatorUtils.isMobile(account)) {
+                if (ValidatorUtils.isPassword(password) && ValidatorUtils.isPassword(confrimpassword)) {
+                    if (password.equals(confrimpassword)) {
+                        SQLiteDatabase database =  dbHelper.getWritableDatabase();
+
+                        ContentValues values = new ContentValues();
+//                        插入用户信息
+                        values.put("account",account);
+                        values.put("password",password);
+                        database.insert("User",null,values);
+//                        创建对话,存放在线用户,保存登录用户
+                        session = new Session(account,Integer.valueOf(password));
+                        MyApplication.appSingleInstance().setSession(session);
+                        // TODO: 2018/2/24  测试session 里的属性值是否为空
+
+                    }
+                }
+
+            }
+        } else if (StringUtils.isEmpty(account)) {
+            ToastUtils.showToast(this, "账号不能为空");
+
+        } else if (!ValidatorUtils.isEmail(account) && !ValidatorUtils.isMobile(account)) {
+            ToastUtils.showToast(this, "账号必须是手机或邮箱");
+
+        } else if (!password.equals(confrimpassword)) {
+            ToastUtils.showToast(this, "前后密码不一致");
+
+        }
+
+    }
+
+    /**
+     * 初始化控件
+     */
+    public void initView() {
+        edt_account = findViewById(R.id.edt_account);
+        edt_password = findViewById(R.id.edt_password);
+        edt_confirmPassword = findViewById(R.id.edt_confirmPassword);
+        button = findViewById(R.id.hello);
     }
 
 
@@ -138,6 +219,7 @@ public class MainActivity extends AppCompatActivity {
         switch (requestCode) {
             case TAKE_PHOTO:
                 if (resultCode == RESULT_OK) {
+//                    cropPhoto();
                     try {
                         Bitmap bitmap = BitmapFactory.decodeStream(getContentResolver().openInputStream(imageUri));
                         circleImageView = findViewById(R.id.iv_headIcon);
@@ -162,6 +244,19 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
                 break;
+            case CROP_PHOTO:
+                if (resultCode == RESULT_OK) {
+                    Bitmap bitmap = null;
+                    try {
+                        bitmap = BitmapFactory.decodeStream(getContentResolver().openInputStream(imageUri));
+                    } catch (FileNotFoundException e) {
+                        e.printStackTrace();
+                    }
+                    circleImageView = findViewById(R.id.iv_headIcon);
+                    circleImageView.setImageBitmap(bitmap);
+                }
+                break;
+
             default:
                 break;
         }
@@ -258,7 +353,7 @@ public class MainActivity extends AppCompatActivity {
         if (Build.VERSION.SDK_INT >= 24) {
             imageUri = FileProvider.getUriForFile(MainActivity.this
                     , "com.example.raymond.myandroidproject.fileprovider", outputCropImage);
-        }else {
+        } else {
             imageUri = Uri.fromFile(outputCropImage);
         }
         return outputCropImage;
@@ -267,28 +362,19 @@ public class MainActivity extends AppCompatActivity {
     /**
      * 裁剪图片
      *
-     * @param uri 需要裁剪图片的Uri
+     * @param
      */
-    private void cropPhoto(Uri uri) {
+    private void cropPhoto() {
         Intent intent = new Intent("com.android.camera.CROP");
-        File cropPhotoFile = null;
-        cropPhotoFile = createCropImageFile();
-        if (cropPhotoFile != null) {
-            imageUri = Uri.fromFile(cropPhotoFile);
-
-            intent.setDataAndType(uri, "image/*");
-            intent.putExtra("crop", true);
-            intent.putExtra("aspectX", 1);
-            intent.putExtra("aspectY", 1);
-            intent.putExtra("outputX", 300);
-            intent.putExtra("outputY", 300);
-            intent.putExtra("return-data", false);
-            intent.putExtra(MediaStore.EXTRA_OUTPUT, imageUri);
-            intent.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-            startActivityForResult(intent, CROP_PHOTO);
-        }
-
+        intent.putExtra("crop", true);
+        intent.putExtra("aspectX", 1);
+        intent.putExtra("aspectY", 1);
+        intent.putExtra("outputX", 300);
+        intent.putExtra("outputY", 300);
+        intent.putExtra("return-data", false);
+        intent.putExtra(MediaStore.EXTRA_OUTPUT, createCropImageFile());
+        intent.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        startActivityForResult(intent, CROP_PHOTO);
     }
-
 
 }

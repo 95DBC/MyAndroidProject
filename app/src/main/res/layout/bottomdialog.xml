@@ -13,7 +13,7 @@
         android:layout_width="320dp"
         android:layout_height="50dp"
         android:background="@drawable/photo_camera"
-        android:text="使用相机"
+        android:text="camera"
        android:layout_marginBottom="10dp"
          />
 
@@ -23,14 +23,14 @@
         android:layout_height="50dp"
         android:background="@drawable/photo_camera"
         android:layout_marginBottom="10dp"
-        android:text="从相册里选取"
+        android:text="album"
         />
     <Button
         android:id="@+id/btn_cancel"
         android:layout_width="320dp"
         android:layout_height="50dp"
         android:background="@drawable/photo_cancel"
-        android:text="取消"
+        android:text="cancel"
         android:layout_marginBottom="10dp"
        />
     </LinearLayout>
